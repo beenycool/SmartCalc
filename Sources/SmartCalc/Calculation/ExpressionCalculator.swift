@@ -222,6 +222,349 @@ class ExpressionCalculator {
         return tokens
     }
     
+    // MARK: - Infix to Postfix Conversion
+    
+    private func infixToPostfix(_ tokens: [TokenType]) throws -> [TokenType] {
+        var output = [TokenType]()
+        var operatorStack = [TokenType]()
+        
+        for token in tokens {
+            switch token {
+            case .number, .variable:
+                output.append(token)
+                
+            case .function:
+                operatorStack.append(token)
+                
+            case .leftParenthesis:
+                operatorStack.append(token)
+                
+            case .rightParenthesis:
+                while let top = operatorStack.last, case .operation = top {
+                    output.append(operatorStack.removeLast())
+                }
+                
+                if case .function = operatorStack.last {
+                    output.append(operatorStack.removeLast())
+                }
+                
+                if operatorStack.isEmpty || operatorStack.last != .leftParenthesis {
+                    throw CalculationError.unmatchedParentheses
+                }
+                
+                operatorStack.removeLast()
+                
+            case .operation:
+                while let top = operatorStack.last {
+                    if case .operation = top, top.precedence >= token.precedence {
+                        output.append(operatorStack.removeLast())
+                    } else {
+                        break
+                    }
+                }
+                operatorStack.append(token)
+                
+            default:
+                break
+            }
+        }
+        
+        while let op = operatorStack.last {
+            if op == .leftParenthesis {
+                throw CalculationError.unmatchedParentheses
+            }
+            output.append(operatorStack.removeLast())
+        }
+        
+        return output
+    }
+    
+    // MARK: - Postfix Evaluation
+    
+    private func evaluatePostfix(_ tokens: [TokenType]) throws -> (Double, [String]) {
+        var stack = [Double]()
+        var steps = [String]()
+        
+        for token in tokens {
+            switch token {
+            case .number(let value):
+                stack.append(value)
+                
+            case .operation(let op):
+                guard stack.count >= 2 else { throw CalculationError.invalidExpression }
+                let b = stack.removeLast()
+                let a = stack.removeLast()
+                
+                let result: Double
+                switch op {
+                case "+":
+                    result = a + b
+                case "-":
+                    result = a - b
+                case "*":
+                    result = a * b
+                case "/":
+                    guard b != 0 else { throw CalculationError.divisionByZero }
+                    result = a / b
+                case "^":
+                    result = pow(a, b)
+                default:
+                    throw CalculationError.unsupportedOperation(op)
+                }
+                
+                stack.append(result)
+                steps.append("\(a) \(op) \(b) = \(result)")
+                
+            case .function(let name):
+                guard let value = stack.last else { throw CalculationError.invalidExpression }
+                
+                let result: Double
+                switch name {
+                case "sin": result = sin(value)
+                case "cos": result = cos(value)
+                case "tan": result = tan(value)
+                case "asin": result = asin(value)
+                case "acos": result = acos(value)
+                case "atan": result = atan(value)
+                case "sinh": result = sinh(value)
+                case "cosh": result = cosh(value)
+                case "tanh": result = tanh(value)
+                case "log": result = log10(value)
+                case "ln": result = log(value)
+                case "sqrt": result = sqrt(value)
+                default:
+                    throw CalculationError.unsupportedFunction(name)
+                }
+                
+                _ = stack.removeLast()
+                stack.append(result)
+                steps.append("\(name)(\(value)) = \(result)")
+                
+            default:
+                throw CalculationError.invalidExpression
+            }
+        }
+        
+        guard stack.count == 1 else { throw CalculationError.invalidExpression }
+        return (stack[0], steps)
+    }
+    
+    // MARK: - Matrix Operations
+    
+    private func parseMatrices(from expression: String) throws -> [[[Double]]] {
+        let pattern = "\\[(\\d+(?:,\\d+)*(?:;\\d+(?:,\\d+)*)*)]"
+        let regex = try NSRegularExpression(pattern: pattern)
+        let range = NSRange(expression.startIndex..<expression.endIndex, in: expression)
+        let matches = regex.matches(in: expression, range: range)
+        
+        return try matches.map { match in
+            guard let matchRange = Range(match.range, in: expression) else {
+                throw CalculationError.invalidExpression
+            }
+            
+            let matrixStr = String(expression[matchRange])
+            let content = matrixStr.dropFirst().dropLast()
+            let rows = content.split(separator: ";")
+            
+            return try rows.map { row in
+                try row.split(separator: ",").map {
+                    guard let num = Double(String($0).trimmingCharacters(in: .whitespaces)) else {
+                        throw CalculationError.invalidExpression
+                    }
+                    return num
+                }
+            }
+        }
+    }
+    
+    private func identifyMatrixOperation(_ expression: String) throws -> String {
+        let operators = ["×", "+", "-"]
+        return operators.first { expression.contains($0) } ?? "det"
+    }
+    
+    private func performMatrixOperation(_ matrices: [[[Double]]], _ operation: String) throws -> [[Double]] {
+        guard !matrices.isEmpty else { throw CalculationError.invalidExpression }
+        
+        switch operation {
+        case "×":
+            guard matrices.count == 2 else { throw CalculationError.invalidExpression }
+            return try multiplyMatrices(matrices[0], matrices[1])
+            
+        case "+":
+            guard matrices.count == 2 else { throw CalculationError.invalidExpression }
+            return try addMatrices(matrices[0], matrices[1])
+            
+        case "-":
+            guard matrices.count == 2 else { throw CalculationError.invalidExpression }
+            return try subtractMatrices(matrices[0], matrices[1])
+            
+        case "det":
+            guard matrices.count == 1 else { throw CalculationError.invalidExpression }
+            return [[try determinant(matrices[0])]]
+            
+        default:
+            throw CalculationError.unsupportedOperation(operation)
+        }
+    }
+    
+    private func multiplyMatrices(_ a: [[Double]], _ b: [[Double]]) throws -> [[Double]] {
+        guard !a.isEmpty && !b.isEmpty && !a[0].isEmpty && !b[0].isEmpty else {
+            throw CalculationError.invalidExpression
+        }
+        
+        let m = a.count
+        let n = a[0].count
+        let p = b[0].count
+        
+        guard b.count == n else { throw CalculationError.matrixDimensionMismatch }
+        
+        var result = Array(repeating: Array(repeating: 0.0, count: p), count: m)
+        
+        for i in 0..<m {
+            for j in 0..<p {
+                for k in 0..<n {
+                    result[i][j] += a[i][k] * b[k][j]
+                }
+            }
+        }
+        
+        return result
+    }
+    
+    private func addMatrices(_ a: [[Double]], _ b: [[Double]]) throws -> [[Double]] {
+        guard a.count == b.count && a[0].count == b[0].count else {
+            throw CalculationError.matrixDimensionMismatch
+        }
+        
+        return zip(a, b).map { row1, row2 in
+            zip(row1, row2).map(+)
+        }
+    }
+    
+    private func subtractMatrices(_ a: [[Double]], _ b: [[Double]]) throws -> [[Double]] {
+        guard a.count == b.count && a[0].count == b[0].count else {
+            throw CalculationError.matrixDimensionMismatch
+        }
+        
+        return zip(a, b).map { row1, row2 in
+            zip(row1, row2).map(-)
+        }
+    }
+    
+    private func determinant(_ matrix: [[Double]]) throws -> Double {
+        let n = matrix.count
+        guard n == matrix[0].count else { throw CalculationError.matrixDimensionMismatch }
+        
+        if n == 1 {
+            return matrix[0][0]
+        }
+        
+        if n == 2 {
+            return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]
+        }
+        
+        var det = 0.0
+        for j in 0..<n {
+            var submatrix = [[Double]]()
+            for i in 1..<n {
+                var row = [Double]()
+                for k in 0..<n where k != j {
+                    row.append(matrix[i][k])
+                }
+                submatrix.append(row)
+            }
+            let sign = (j % 2 == 0) ? 1.0 : -1.0
+            det += sign * matrix[0][j] * (try determinant(submatrix))
+        }
+        return det
+    }
+    
+    // MARK: - Complex Number Operations
+    
+    private func parseComplexNumbers(from expression: String) throws -> [Complex<Double>] {
+        let pattern = "(-?\\d+(?:\\.\\d+)?)([-+])(-?\\d+(?:\\.\\d+)?)i"
+        let regex = try NSRegularExpression(pattern: pattern)
+        let range = NSRange(expression.startIndex..<expression.endIndex, in: expression)
+        let matches = regex.matches(in: expression, range: range)
+        
+        return try matches.map { match -> Complex<Double> in
+            guard let matchRange = Range(match.range, in: expression),
+                  match.numberOfRanges == 4,
+                  let realRange = Range(match.range(at: 1), in: expression),
+                  let opRange = Range(match.range(at: 2), in: expression),
+                  let imagRange = Range(match.range(at: 3), in: expression),
+                  let real = Double(String(expression[realRange])),
+                  let imag = Double(String(expression[imagRange])) else {
+                throw CalculationError.invalidExpression
+            }
+            
+            let sign = expression[opRange] == "+" ? 1.0 : -1.0
+            return Complex(real, sign * imag)
+        }
+    }
+    
+    private func identifyComplexOperation(_ expression: String) throws -> String {
+        let operators = ["+", "-", "*", "/", "conj"]
+        return operators.first { expression.contains($0) } ?? "abs"
+    }
+    
+    private func performComplexOperation(_ numbers: [Complex<Double>], _ operation: String) throws -> Complex<Double> {
+        guard !numbers.isEmpty else { throw CalculationError.invalidExpression }
+        
+        switch operation {
+        case "+":
+            guard numbers.count == 2 else { throw CalculationError.invalidExpression }
+            return numbers[0] + numbers[1]
+            
+        case "-":
+            guard numbers.count == 2 else { throw CalculationError.invalidExpression }
+            return numbers[0] - numbers[1]
+            
+        case "*":
+            guard numbers.count == 2 else { throw CalculationError.invalidExpression }
+            return numbers[0] * numbers[1]
+            
+        case "/":
+            guard numbers.count == 2 else { throw CalculationError.invalidExpression }
+            guard numbers[1] != Complex(0, 0) else { throw CalculationError.divisionByZero }
+            return numbers[0] / numbers[1]
+            
+        case "conj":
+            guard numbers.count == 1 else { throw CalculationError.invalidExpression }
+            return numbers[0].conjugate
+            
+        case "abs":
+            guard numbers.count == 1 else { throw CalculationError.invalidExpression }
+            return Complex(numbers[0].magnitude, 0)
+            
+        default:
+            throw CalculationError.unsupportedOperation(operation)
+        }
+    }
+    
+    // MARK: - Graphing Functions
+    
+    func generatePoints(for function: String, in range: ClosedRange<Double> = -10...10, steps: Int = 200) throws -> [(Double, Double)] {
+        let dx = (range.upperBound - range.lowerBound) / Double(steps)
+        var points = [(Double, Double)]()
+        
+        for i in 0...steps {
+            let x = range.lowerBound + Double(i) * dx
+            let expression = function.replacingOccurrences(of: "x", with: "\(x)")
+            
+            do {
+                let (y, _) = try evaluate(expression)
+                if y.isFinite {
+                    points.append((x, y))
+                }
+            } catch {
+                continue
+            }
+        }
+        
+        return points
+    }
+    
     // MARK: - Error Handling
     
     enum CalculationError: Error, LocalizedError {

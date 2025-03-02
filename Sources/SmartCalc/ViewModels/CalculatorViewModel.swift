@@ -146,42 +146,207 @@ class CalculatorViewModel: ObservableObject {
     
     private func calculateMatrix() {
         do {
-            let (value, matrixSteps) = try calculator.evaluateMatrix(matrixA: matrixA, matrixB: matrixB, operation: input)
-            if let singleValue = value as? Double {
-                result = formatResult(singleValue)
-            } else if let matrix = value as? [[Double]] {
-                result = formatMatrixResult(matrix)
+            // Parse matrices from input string
+            let matrixExpression = input.trimmingCharacters(in: .whitespaces)
+            let (value, matrixSteps) = try calculator.evaluate(expression: matrixExpression)
+            
+            // Handle different return types
+            if let mat = value as? [[Double]] {
+                result = formatMatrixResult(mat)
+            } else {
+                result = formatResult(value)
             }
+            
+            // Update matrix visualization
+            if let matches = try? parseMatrixInput(matrixExpression) {
+                if matches.count > 0 { matrixA = matches[0] }
+                if matches.count > 1 { matrixB = matches[1] }
+            }
+            
             steps = matrixSteps
         } catch {
             result = "Error: \(error.localizedDescription)"
         }
     }
     
+    private func parseMatrixInput(_ input: String) throws -> [[[Double]]] {
+        let pattern = "\\[(\\d+(?:,\\d+)*(?:;\\d+(?:,\\d+)*)*)]"
+        let regex = try NSRegularExpression(pattern: pattern)
+        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        let matches = regex.matches(in: input, range: range)
+        
+        return try matches.map { match in
+            guard let matchRange = Range(match.range, in: input) else {
+                throw CalculationError.invalidExpression
+            }
+            
+            let matrixStr = String(input[matchRange])
+            let content = matrixStr.dropFirst().dropLast()
+            let rows = content.split(separator: ";")
+            
+            return try rows.map { row in
+                try row.split(separator: ",").map {
+                    guard let num = Double(String($0).trimmingCharacters(in: .whitespaces)) else {
+                        throw CalculationError.invalidExpression
+                    }
+                    return num
+                }
+            }
+        }
+    }
+    
     private func generateGraphPoints() {
         do {
-            graphData = try calculator.generatePoints(for: input, range: -10...10, steps: 200)
-            result = "Graph generated"
+            // Check if input is in correct format (y = f(x))
+            let expression = input.trimmingCharacters(in: .whitespaces)
+            guard expression.lowercased().hasPrefix("y = ") || expression.lowercased().hasPrefix("y=") else {
+                throw CalculationError.invalidExpression
+            }
+            
+            // Extract the function part after "y ="
+            let functionPart = expression.dropFirst(expression.contains(" = ") ? 4 : 2).trimmingCharacters(in: .whitespaces)
+            
+            // Generate points
+            graphData = try calculator.generatePoints(for: functionPart)
+            
+            // Calculate some key points for display
+            let keyPoints = try findKeyPoints(functionPart)
+            
+            result = "Graph generated successfully"
+            steps = [
+                "Function: y = \(functionPart)",
+                "Domain: [-10, 10]",
+                "Points generated: \(graphData.count)",
+                "Key points: \(keyPoints)"
+            ]
+        } catch {
+            result = "Error: \(error.localizedDescription)"
+            graphData = []
+        }
+    }
+    
+    private func findKeyPoints(_ function: String) throws -> String {
+        var keyPoints = [(x: Double, y: Double)]()
+        
+        // Check y value at x = 0 (y-intercept)
+        if let (y, _) = try? calculator.evaluate(expression: function.replacingOccurrences(of: "x", with: "0")) {
+            keyPoints.append((x: 0, y: y))
+        }
+        
+        // Check x value at y = 0 (x-intercept) by trying a few points
+        for x in [-10, -5, 0, 5, 10] {
+            let (y, _) = try calculator.evaluate(expression: function.replacingOccurrences(of: "x", with: "\(x)"))
+            if abs(y) < 0.0001 { // Close enough to zero
+                keyPoints.append((x: Double(x), y: 0))
+            }
+        }
+        
+        return keyPoints.map { "(\(formatResult($0.x)), \(formatResult($0.y)))" }.joined(separator: ", ")
+    }
+    
+    private func calculateProgrammer() {
+        do {
+            // Parse the input to identify base and operation
+            let components = input.lowercased().split(separator: " ")
+            guard components.count >= 1 else {
+                throw CalculationError.invalidExpression
+            }
+            
+            var programmerSteps = [String]()
+            var finalValue: Int = 0
+            
+            if components.count == 1 {
+                // Single number conversion
+                finalValue = try parseNumber(String(components[0]))
+                programmerSteps.append("Converting \(components[0])")
+            } else if components.count == 3 {
+                // Binary operation (e.g. "FF AND 0F")
+                let a = try parseNumber(String(components[0]))
+                let op = String(components[1])
+                let b = try parseNumber(String(components[2]))
+                
+                finalValue = try performBitwiseOperation(a, op, b)
+                programmerSteps.append("Performing \(a) \(op) \(b)")
+            } else {
+                throw CalculationError.invalidExpression
+            }
+            
+            result = formatProgrammerResult(finalValue)
+            programmerSteps.append(result)
+            steps = programmerSteps
+            
         } catch {
             result = "Error: \(error.localizedDescription)"
         }
     }
     
-    private func calculateProgrammer() {
-        do {
-            let (value, programmerSteps) = try calculator.evaluateProgrammer(expression: input)
-            result = formatProgrammerResult(value)
-            steps = programmerSteps
-        } catch {
-            result = "Error: \(error.localizedDescription)"
+    private func parseNumber(_ str: String) throws -> Int {
+        if str.hasPrefix("0x") {
+            return try Int(str.dropFirst(2), radix: 16) ?? 0
+        } else if str.hasPrefix("0b") {
+            return try Int(str.dropFirst(2), radix: 2) ?? 0
+        } else if str.hasPrefix("0o") {
+            return try Int(str.dropFirst(2), radix: 8) ?? 0
+        } else if let decimal = Int(str) {
+            return decimal
+        }
+        throw CalculationError.invalidExpression
+    }
+    
+    private func performBitwiseOperation(_ a: Int, _ op: String, _ b: Int) throws -> Int {
+        switch op.uppercased() {
+        case "AND": return a & b
+        case "OR": return a | b
+        case "XOR": return a ^ b
+        case "<<": return a << b
+        case ">>": return a >> b
+        default: throw CalculationError.unsupportedOperation(op)
         }
     }
     
     private func calculateStatistics() {
         do {
-            let (value, statsSteps) = try calculator.evaluateStatistics(data: input)
-            result = formatResult(value)
-            steps = statsSteps
+            // Parse input string to array of numbers
+            let numbers = input.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard !numbers.isEmpty else { throw CalculationError.invalidExpression }
+            
+            // Calculate statistics
+            let n = Double(numbers.count)
+            let sum = numbers.reduce(0, +)
+            let mean = sum / n
+            
+            // Calculate variance and standard deviation
+            let sumSquaredDiff = numbers.reduce(0) { $0 + pow($1 - mean, 2) }
+            let variance = sumSquaredDiff / n
+            let stdDev = sqrt(variance)
+            
+            // Calculate median
+            let sorted = numbers.sorted()
+            let median = n.truncatingRemainder(dividingBy: 2) == 0 
+                ? (sorted[Int(n/2) - 1] + sorted[Int(n/2)]) / 2 
+                : sorted[Int(n/2)]
+            
+            // Calculate mode
+            let frequencies = Dictionary(grouping: numbers, by: { $0 }).mapValues { $0.count }
+            let maxFrequency = frequencies.values.max() ?? 0
+            let modes = frequencies.filter { $0.value == maxFrequency }.keys.sorted()
+            
+            result = """
+            Mean: \(formatResult(mean))
+            Median: \(formatResult(median))
+            Mode: \(modes.map { formatResult($0) }.joined(separator: ", "))
+            Standard Deviation: \(formatResult(stdDev))
+            """
+            
+            steps = [
+                "Count: \(Int(n))",
+                "Sum: \(formatResult(sum))",
+                "Mean: \(formatResult(mean))",
+                "Median: \(formatResult(median))",
+                "Mode: \(modes.map { formatResult($0) }.joined(separator: ", "))",
+                "Variance: \(formatResult(variance))",
+                "Standard Deviation: \(formatResult(stdDev))"
+            ]
         } catch {
             result = "Error: \(error.localizedDescription)"
         }
