@@ -20,8 +20,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-numerics", from: "1.0.0"),
         .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.13.0"),
         .package(url: "https://github.com/attaswift/BigInt", from: "5.3.0"),
-        .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.8"),
-        .package(url: "https://github.com/swiftstats/SwiftStats", from: "1.0.0")
+        .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.8")
     ],
     targets: [
         .target(
@@ -31,8 +30,7 @@ let package = Package(
                 .product(name: "Collections", package: "swift-collections"),
                 .product(name: "Numerics", package: "swift-numerics"),
                 .product(name: "Parsing", package: "swift-parsing"),
-                .product(name: "BigInt", package: "BigInt"),
-                .product(name: "SwiftStats", package: "SwiftStats")
+                .product(name: "BigInt", package: "BigInt")
             ]
         ),
         .testTarget(
