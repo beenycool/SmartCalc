@@ -1,0 +1,64 @@
+# Xcode
+#
+# Adjust the following depending on your installation:
+#   * If the folder is not in the same volume as the project:
+#       удалить DerivedData
+#   * If you never use indexing:
+#       удалить *.xcindex
+#   * If you never use Swift Package Manager:
+#       удалить .swiftpm
+#   * If you are using Carthage:
+#       удалить Carthage/Build
+
+.build/
+DerivedData/
+*.xcuserstate
+*.xcschemes
+*.xcindex
+*.xccheckout
+*.perspectivev3
+*.lock.xcdatamodeld
+xcuserdata/
+*.moved-aside
+*.lnproj
+
+# Swift Package Manager
+.swiftpm/xcode/xcshareddata/xcschemes/
+.swiftpm/xcode/xcuserdata/
+
+# CocoaPods
+Podfile.lock
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+
+# Built products
+*.app
+*.dSYM
+*.pkg
+
+# App Store Connect metadata
+itc_transporter.log
+*/metadata.json
+*/previews/*
+*/screenshots/*
+
+# Crashlytics
+*.crash
+
+# Apple-related files
+*.DS_Store
+
+# Other files
+*.log
+*.mode1v3
+*.perspectivev3
+.idea/
+.vscode/
+.build/repositories/BigInt-7b87d7d1/hooks/fsmonitor-watchman.sample
