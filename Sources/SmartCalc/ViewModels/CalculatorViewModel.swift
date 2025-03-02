@@ -15,9 +15,57 @@ class CalculatorViewModel: ObservableObject {
     @Published var matrixA: [[Double]] = []
     @Published var matrixB: [[Double]] = []
     
+    // AI settings
+    @Published var aiSettings = AISettings()
+    @Published var isProcessingAIRequest: Bool = false
+    
+    // Finance calculators
+    @Published var selectedFinanceCalculator: FinanceCalculatorType = .mortgage
+    @Published var mortgageCalculator = MortgageCalculator()
+    @Published var compoundInterestCalculator = CompoundInterestCalculator()
+    @Published var tipCalculator = TipCalculator()
+    @Published var discountCalculator = DiscountCalculator()
+    @Published var currencyExchange = CurrencyExchange()
+    @Published var dateCalculator = DateCalculator()
+    
+    // Finance calculator inputs
+    @Published var loanAmount: Double = 300000
+    @Published var interestRate: Double = 4.5
+    @Published var loanTermYears: Int = 30
+    @Published var amortizationSchedule: [AmortizationEntry] = []
+    
+    // Compound interest inputs
+    @Published var principal: Double = 10000
+    @Published var annualReturnRate: Double = 7.0
+    @Published var investmentYears: Int = 20
+    @Published var compoundingFrequency: Int = 12
+    @Published var monthlyContribution: Double = 500
+    
+    // Tip calculator inputs
+    @Published var billAmount: Double = 100
+    @Published var tipPercentage: Double = 15
+    @Published var numberOfPeople: Int = 2
+    
+    // Discount calculator inputs
+    @Published var originalPrice: Double = 100
+    @Published var discountPercentage: Double = 20
+    @Published var taxRate: Double = 7.5
+    
+    // Currency exchange inputs
+    @Published var exchangeAmount: Double = 100
+    @Published var fromCurrency: String = "USD"
+    @Published var toCurrency: String = "EUR"
+    @Published var exchangeRate: Double = 0.92
+    
+    // Date calculator inputs
+    @Published var startDate: Date = Date()
+    @Published var endDate: Date = Date().addingTimeInterval(86400 * 30) // 30 days
+    @Published var countWeekdaysOnly: Bool = false
+    
     private let calculator = ExpressionCalculator()
     private let equationSolver = EquationSolver()
     private let unitConverter = UnitConverter()
+    private var aiProvider: AIProvider?
     
     // Constants
     private let mathConstants = [
@@ -47,6 +95,10 @@ class CalculatorViewModel: ObservableObject {
             calculateProgrammer()
         case .statistics:
             calculateStatistics()
+        case .ai:
+            processAIRequest()
+        case .finance:
+            calculateFinance()
         }
         
         // Add to history if there's a result
@@ -135,6 +187,291 @@ class CalculatorViewModel: ObservableObject {
         }
     }
     
+    private func processAIRequest() {
+        // Set up AI processing state
+        isProcessingAIRequest = true
+        result = "Processing request..."
+        
+        // Use selected AI provider to process request
+        submitAIQuery(input) { response, error in
+            DispatchQueue.main.async {
+                self.isProcessingAIRequest = false
+                
+                if let error = error {
+                    self.result = "Error: \(error.localizedDescription)"
+                    return
+                }
+                
+                guard let response = response else {
+                    self.result = "Error: No response received"
+                    return
+                }
+                
+                self.result = response.result
+                if self.aiSettings.showStepByStep {
+                    self.steps = response.steps
+                }
+            }
+        }
+    }
+    
+    private func calculateFinance() {
+        switch selectedFinanceCalculator {
+        case .mortgage, .loanPayment:
+            calculateMortgage()
+        case .investment, .compoundInterest:
+            calculateInvestment()
+        case .tipCalculator:
+            calculateTip()
+        case .discount:
+            calculateDiscount()
+        case .currencyExchange:
+            calculateCurrencyExchange()
+        case .dateCalculator:
+            calculateDateDifference()
+        case .retirement:
+            calculateRetirement()
+        case .fuelEfficiency:
+            calculateFuelEfficiency()
+        }
+    }
+    
+    private func calculateMortgage() {
+        let monthlyPayment = mortgageCalculator.calculateMonthlyPayment(
+            loanAmount: loanAmount,
+            interestRate: interestRate,
+            loanTermYears: loanTermYears
+        )
+        
+        // Generate amortization schedule
+        amortizationSchedule = mortgageCalculator.generateAmortizationSchedule(
+            loanAmount: loanAmount,
+            interestRate: interestRate,
+            loanTermYears: loanTermYears
+        )
+        
+        // Calculate total payments and interest
+        let totalPayments = monthlyPayment * Double(loanTermYears * 12)
+        let totalInterest = totalPayments - loanAmount
+        
+        result = """
+        Monthly Payment: \(formatCurrency(monthlyPayment))
+        Total Payments: \(formatCurrency(totalPayments))
+        Total Interest: \(formatCurrency(totalInterest))
+        """
+        
+        steps = [
+            "Loan Amount: \(formatCurrency(loanAmount))",
+            "Interest Rate: \(String(format: "%.2f", interestRate))%",
+            "Loan Term: \(loanTermYears) years",
+            "Monthly Payment: \(formatCurrency(monthlyPayment))",
+            "Total of \(loanTermYears * 12) Payments: \(formatCurrency(totalPayments))",
+            "Total Interest: \(formatCurrency(totalInterest))"
+        ]
+    }
+    
+    private func calculateInvestment() {
+        let futureValue = compoundInterestCalculator.calculateFutureValue(
+            principal: principal,
+            annualRate: annualReturnRate,
+            years: investmentYears,
+            compoundingFrequency: compoundingFrequency,
+            monthlyContribution: monthlyContribution
+        )
+        
+        let totalContributions = principal + (monthlyContribution * Double(12 * investmentYears))
+        let totalInterest = futureValue - totalContributions
+        
+        result = """
+        Future Value: \(formatCurrency(futureValue))
+        Total Interest Earned: \(formatCurrency(totalInterest))
+        """
+        
+        steps = [
+            "Initial Principal: \(formatCurrency(principal))",
+            "Annual Return Rate: \(String(format: "%.2f", annualReturnRate))%",
+            "Monthly Contribution: \(formatCurrency(monthlyContribution))",
+            "Investment Period: \(investmentYears) years",
+            "Compounding Frequency: \(compoundingFrequencyName(compoundingFrequency))",
+            "Total Contributions: \(formatCurrency(totalContributions))",
+            "Interest Earned: \(formatCurrency(totalInterest))",
+            "Final Value: \(formatCurrency(futureValue))"
+        ]
+    }
+    
+    private func calculateTip() {
+        let (tipAmount, totalAmount, perPersonAmount) = tipCalculator.calculateTip(
+            billAmount: billAmount,
+            tipPercentage: tipPercentage,
+            numberOfPeople: numberOfPeople
+        )
+        
+        result = """
+        Tip Amount: \(formatCurrency(tipAmount))
+        Total Bill: \(formatCurrency(totalAmount))
+        Amount Per Person: \(formatCurrency(perPersonAmount))
+        """
+        
+        steps = [
+            "Bill Amount: \(formatCurrency(billAmount))",
+            "Tip Percentage: \(String(format: "%.1f", tipPercentage))%",
+            "Number of People: \(numberOfPeople)",
+            "Tip Amount: \(formatCurrency(tipAmount))",
+            "Total Bill with Tip: \(formatCurrency(totalAmount))",
+            "Amount Per Person: \(formatCurrency(perPersonAmount))"
+        ]
+    }
+    
+    private func calculateDiscount() {
+        let (discountAmount, savedAmount, finalPrice, taxAmount) = discountCalculator.calculateDiscountedPrice(
+            originalPrice: originalPrice,
+            discountPercentage: discountPercentage,
+            taxRate: taxRate
+        )
+        
+        result = """
+        Discounted Price: \(formatCurrency(finalPrice - taxAmount))
+        Final Price (with tax): \(formatCurrency(finalPrice))
+        You Save: \(formatCurrency(savedAmount))
+        """
+        
+        steps = [
+            "Original Price: \(formatCurrency(originalPrice))",
+            "Discount: \(String(format: "%.1f", discountPercentage))%",
+            "Discount Amount: \(formatCurrency(discountAmount))",
+            "Price After Discount: \(formatCurrency(originalPrice - discountAmount))",
+            "Tax Rate: \(String(format: "%.2f", taxRate))%",
+            "Tax Amount: \(formatCurrency(taxAmount))",
+            "Final Price: \(formatCurrency(finalPrice))"
+        ]
+    }
+    
+    private func calculateCurrencyExchange() {
+        let convertedAmount = currencyExchange.convert(
+            amount: exchangeAmount,
+            fromCurrency: fromCurrency,
+            toCurrency: toCurrency,
+            exchangeRate: exchangeRate
+        )
+        
+        result = "\(formatCurrency(exchangeAmount)) \(fromCurrency) = \(formatCurrency(convertedAmount)) \(toCurrency)"
+        
+        steps = [
+            "Converting from \(fromCurrency) to \(toCurrency)",
+            "Amount: \(formatCurrency(exchangeAmount)) \(fromCurrency)",
+            "Exchange Rate: 1 \(fromCurrency) = \(exchangeRate) \(toCurrency)",
+            "Calculation: \(formatCurrency(exchangeAmount)) × \(exchangeRate)",
+            "Result: \(formatCurrency(convertedAmount)) \(toCurrency)"
+        ]
+    }
+    
+    private func calculateDateDifference() {
+        let daysBetween = dateCalculator.daysBetween(
+            startDate: startDate,
+            endDate: endDate,
+            countWeekdaysOnly: countWeekdaysOnly
+        )
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        
+        let startDateString = dateFormatter.string(from: startDate)
+        let endDateString = dateFormatter.string(from: endDate)
+        
+        if countWeekdaysOnly {
+            result = "\(daysBetween) business days between dates"
+        } else {
+            result = "\(daysBetween) days between dates"
+        }
+        
+        steps = [
+            "Start Date: \(startDateString)",
+            "End Date: \(endDateString)",
+            countWeekdaysOnly ? "Counting business days only" : "Counting all days",
+            "Total: \(daysBetween) days"
+        ]
+    }
+    
+    private func calculateRetirement() {
+        // Simplified retirement calculation
+        let futureValue = compoundInterestCalculator.calculateFutureValue(
+            principal: principal,
+            annualRate: annualReturnRate,
+            years: investmentYears,
+            compoundingFrequency: 12,
+            monthlyContribution: monthlyContribution
+        )
+        
+        // Estimated monthly income during retirement (4% withdrawal rule)
+        let monthlyIncome = (futureValue * 0.04) / 12
+        
+        result = """
+        Retirement Savings: \(formatCurrency(futureValue))
+        Monthly Income: \(formatCurrency(monthlyIncome))
+        """
+        
+        steps = [
+            "Initial Savings: \(formatCurrency(principal))",
+            "Monthly Contribution: \(formatCurrency(monthlyContribution))",
+            "Years Until Retirement: \(investmentYears)",
+            "Expected Annual Return: \(String(format: "%.2f", annualReturnRate))%",
+            "Estimated Retirement Savings: \(formatCurrency(futureValue))",
+            "Estimated Monthly Income (4% Rule): \(formatCurrency(monthlyIncome))"
+        ]
+    }
+    
+    private func calculateFuelEfficiency() {
+        // Simple fuel efficiency calculator
+        // Assuming input format: "distance,fuel,unit"
+        // Example: "100,5,mpg" or "100,5,l/100km"
+        
+        let components = input.components(separatedBy: ",")
+        guard components.count >= 2 else {
+            result = "Error: Please enter in format: distance,fuel[,unit]"
+            return
+        }
+        
+        guard let distance = Double(components[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+              let fuel = Double(components[1].trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            result = "Error: Invalid numbers"
+            return
+        }
+        
+        let unit = components.count > 2 ? components[2].trimmingCharacters(in: .whitespacesAndNewlines) : "mpg"
+        
+        if unit.lowercased() == "mpg" {
+            let mpg = distance / fuel
+            let lper100km = 235.214 / mpg // Convert MPG to L/100km
+            
+            result = """
+            \(String(format: "%.2f", mpg)) MPG
+            \(String(format: "%.2f", lper100km)) L/100km
+            """
+            
+            steps = [
+                "Distance: \(distance) miles",
+                "Fuel used: \(fuel) gallons",
+                "Calculation: \(distance) ÷ \(fuel) = \(String(format: "%.2f", mpg)) MPG",
+                "Converting to L/100km: 235.214 ÷ \(String(format: "%.2f", mpg)) = \(String(format: "%.2f", lper100km)) L/100km"
+            ]
+        } else {
+            let lper100km = (fuel / distance) * 100
+            let mpg = 235.214 / lper100km // Convert L/100km to MPG
+            
+            result = """
+            \(String(format: "%.2f", lper100km)) L/100km
+            \(String(format: "%.2f", mpg)) MPG
+            """
+            
+            steps = [
+                "Distance: \(distance) km",
+                "Fuel used: \(fuel) liters",
+                "Calculation: (\(fuel) ÷ \(distance)) × 100 = \(String(format: "%.2f", lper100km)) L/100km",
+                "Converting to MPG: 235.214 ÷ \(String(format: "%.2f", lper100km)) = \(String(format: "%.2f", mpg)) MPG"
+            ]
+        }
+    }
+    
     private func solveEquation() {
         do {
             let (solution, solveSteps) = try equationSolver.solve(equation: input)
@@ -185,6 +522,59 @@ class CalculatorViewModel: ObservableObject {
         }
     }
     
+    func submitAIQuery(_ query: String, completion: @escaping (AIResponse?, Error?) -> Void) {
+        // This would connect to the AI service based on selected provider
+        // Mocking the response for demo purposes
+        
+        // Check if API key is required and provided
+        if aiSettings.selectedProvider.requiresAPIKey && aiSettings.apiKey.isEmpty {
+            completion(nil, NSError(domain: "AIProvider", code: 401, userInfo: [NSLocalizedDescriptionKey: "API key required"]))
+            return
+        }
+        
+        // Simulate network delay
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
+            // Simple example for demo - in a real app, this would make API calls to the selected provider
+            if query.contains("solve") {
+                let response = AIResponse(
+                    result: "x = 2 or x = -2",
+                    steps: [
+                        "Starting with the equation: x² - 4 = 0",
+                        "Adding 4 to both sides: x² = 4",
+                        "Taking square root of both sides: x = ±2",
+                        "Therefore, x = 2 or x = -2"
+                    ]
+                )
+                completion(response, nil)
+            } else if query.contains("explain") {
+                let response = AIResponse(
+                    result: "The quadratic formula is used to solve quadratic equations in the form ax² + bx + c = 0.",
+                    steps: [
+                        "For any quadratic equation ax² + bx + c = 0:",
+                        "The solutions are given by: x = (-b ± √(b² - 4ac)) / 2a",
+                        "The term b² - 4ac is called the discriminant:",
+                        "  • If b² - 4ac > 0: Two real solutions",
+                        "  • If b² - 4ac = 0: One real solution (repeated)",
+                        "  • If b² - 4ac < 0: Two complex solutions"
+                    ]
+                )
+                completion(response, nil)
+            } else {
+                let response = AIResponse(
+                    result: "I'll help you solve this problem step-by-step. What specific mathematical concept would you like me to explain?",
+                    steps: [
+                        "Try asking me to:",
+                        "- Solve an equation",
+                        "- Explain a mathematical concept",
+                        "- Generate practice problems",
+                        "- Break down a complex calculation"
+                    ]
+                )
+                completion(response, nil)
+            }
+        }
+    }
+    
     private func replaceVariables(in expression: String) -> String {
         var processedExpression = expression
         
@@ -223,6 +613,13 @@ class CalculatorViewModel: ObservableObject {
         }
     }
     
+    private func formatCurrency(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "$\(String(format: "%.2f", value))"
+    }
+    
     private func formatMatrixResult(_ matrix: [[Double]]) -> String {
         return matrix.map { row in
             "[\(row.map { formatResult($0) }.joined(separator: ", "))]"
@@ -236,6 +633,17 @@ class CalculatorViewModel: ObservableObject {
         Binary: \(String(value, radix: 2))
         Octal: \(String(value, radix: 8))
         """
+    }
+    
+    private func compoundingFrequencyName(_ frequency: Int) -> String {
+        switch frequency {
+        case 1: return "Annually"
+        case 2: return "Semi-annually"
+        case 4: return "Quarterly"
+        case 12: return "Monthly"
+        case 365: return "Daily"
+        default: return "\(frequency) times per year"
+        }
     }
     
     private func addToHistory() {
@@ -273,6 +681,18 @@ class CalculatorViewModel: ObservableObject {
         matrixA = []
         matrixB = []
     }
+    
+    func switchAIProvider(to provider: AIProvider) {
+        aiSettings.selectedProvider = provider
+        aiSettings.selectedModel = provider.defaultModel
+    }
+    
+    func switchFinanceCalculator(to calculator: FinanceCalculatorType) {
+        selectedFinanceCalculator = calculator
+        // Reset the result when switching calculator modes
+        result = ""
+        steps = []
+    }
 }
 
 struct HistoryEntry: Identifiable {
@@ -281,4 +701,9 @@ struct HistoryEntry: Identifiable {
     let result: String
     let mode: CalculatorMode
     let timestamp: Date
+}
+
+struct AIResponse {
+    let result: String
+    let steps: [String]
 }
